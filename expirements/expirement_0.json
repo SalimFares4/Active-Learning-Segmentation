@@ -1,0 +1,17 @@
+{"n_epoch": 20, "train_args": {"batch_size": 4, "num_workers": 1}, "test_args": {"batch_size": 256, "num_workers": 1}, "optimizer_args": {"lr": 0.0005, "momentum": 0.9}, "use_sam": false, "use_predictor": false, "use_generator": false, "init_set_size": 100, "query_num": 20, "rounds": 15, "activate_sam_at_round": 1, "test_set_size": 1179, "df": "brain_df", "strategy": "MarginSampling", 
+"logs": ["Round 0 testing metrics: iou_score = 0.44, accuracy = 0.99, precision = 0.72, recall = 0.53, f1_score = 0.61", 
+"Round 1 testing metrics: iou_score = 0.49, accuracy = 0.99, precision = 0.79, recall = 0.57, f1_score = 0.66", 
+"Round 2 testing metrics: iou_score = 0.50, accuracy = 0.99, precision = 0.77, recall = 0.59, f1_score = 0.67", 
+"Round 3 testing metrics: iou_score = 0.50, accuracy = 0.99, precision = 0.85, recall = 0.55, f1_score = 0.67", 
+"Round 4 testing metrics: iou_score = 0.48, accuracy = 0.99, precision = 0.86, recall = 0.52, f1_score = 0.65", 
+"Round 5 testing metrics: iou_score = 0.53, accuracy = 0.99, precision = 0.86, recall = 0.58, f1_score = 0.69",
+ 
+"Round 6 testing metrics: iou_score = 0.50, accuracy = 0.99, precision = 0.87, recall = 0.54, f1_score = 0.66", 
+"Round 7 testing metrics: iou_score = 0.50, accuracy = 0.99, precision = 0.87, recall = 0.54, f1_score = 0.67", 
+"Round 8 testing metrics: iou_score = 0.56, accuracy = 0.99, precision = 0.83, recall = 0.63, f1_score = 0.72", 
+"Round 9 testing metrics: iou_score = 0.56, accuracy = 0.99, precision = 0.84, recall = 0.63, f1_score = 0.72", 
+"Round 10 testing metrics: iou_score = 0.54, accuracy = 0.99, precision = 0.87, recall = 0.58, f1_score = 0.70", 
+"Round 11 testing metrics: iou_score = 0.52, accuracy = 0.99, precision = 0.90, recall = 0.55, f1_score = 0.69", 
+"Round 12 testing metrics: iou_score = 0.56, accuracy = 0.99, precision = 0.87, recall = 0.61, f1_score = 0.72", 
+"Round 13 testing metrics: iou_score = 0.57, accuracy = 0.99, precision = 0.90, recall = 0.61, f1_score = 0.72", 
+"Round 14 testing metrics: iou_score = 0.58, accuracy = 1.00, precision = 0.88, recall = 0.63, f1_score = 0.73"]}
