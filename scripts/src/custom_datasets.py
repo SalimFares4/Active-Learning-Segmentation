@@ -20,13 +20,12 @@ from matplotlib import cm
 import cv2
 
 # class AL_Seg_dataset(Dataset):
-#     def __init__(self, oracle_path, inp_df, init = True, transform=True, use_sam = True):
+#     def __init__(self, inp_df, img_size=(256,256),init = True, transform=True, use_sam = True):
 #         # Initialize the Dataset class
     
 #         self.transform_flag = transform
-#         self.img_size = (256,256) 
+#         self.img_size = img_size 
 #         self.boxes = []
-#         self.oracle_path = oracle_path
 #         self.use_sam = use_sam
 #         self.df = pd.DataFrame(columns=["images", "masks", "oracle"])
 #         if init == True:
@@ -46,7 +45,7 @@ import cv2
 
 #     def __len__(self):
 #         # Return the length of the dataset
-#         return len(self.labels)
+#         return len(self.df)
 
 #     def __transform__(self, image, mask):
 #         # Apply transformations to the image and mask
@@ -61,7 +60,7 @@ import cv2
 #         mask = resize(mask)
 
 #         # Transform the image to a tensor
-#         image = TF.to_tensor(image)
+#         # image = TF.to_tensor(image)
 #         # Transform the mask to a tensor
 #         #Recomment this
 #         # mask = TF.to_tensor(mask)
@@ -77,22 +76,24 @@ import cv2
 #             mask_path = self.df["oracle"][index]
                 
 #         else:
-#             mask_path = self.labels[index]
+#             mask_path = self.df["masks"][index]
         
 #         if mask_path.endswith("npy"):
 #             label = torch.Tensor(np.load(mask_path, allow_pickle=True))
+#             label = label.unsqueeze(0)
 #             # label = np.array(np.load(mask_path, allow_pickle=True), np.uint8)
 #         else:
 #             label = TF.to_tensor(cv2.imread(mask_path))
 #             # label = cv2.imread(mask_path)
             
-#         if self.images[index].endswith("npy"):
-#             image = torch.Tensor(np.load(self.images[index], allow_pickle=True))
-#             image = np.load(self.images[index], allow_pickle=True)
+#         if self.df["images"][index].endswith("npy"):
+#             image = torch.Tensor(np.load(self.df["images"][index], allow_pickle=True))
+#             image = image.unsqueeze(0)
+#             # image = np.load(self.df["images"][index], allow_pickle=True)
 #         else:
-#             image = self.__encode_image__(self.images[index])
+#             image = self.__encode_image__(self.df["images"][index])
             
-#         identifier = self.images[index]
+#         identifier = self.df["images"][index]
 
 #         # boxes = torch.Tensor(np.load(self.boxes[index]))
 #         # Reshape boxes
@@ -113,7 +114,7 @@ import cv2
 
     
 class Handler(Dataset):
-    def __init__(self, X, Y, use_sam=True):
+    def __init__(self, X, Y, img_size = (256, 256), use_sam=True):
         """
         Custom dataset handler for image and mask data.
 
@@ -124,7 +125,7 @@ class Handler(Dataset):
         """
         self.X = X
         self.Y = Y
-        self.img_size = (256, 256) 
+        self.img_size = img_size
 
     def __transform__(self, image, mask):
         """
@@ -213,7 +214,7 @@ class Handler(Dataset):
 
     
 class Data:
-    def __init__(self, X_train, Y_train, X_test, Y_test, handler, df:pd.DataFrame=None, path:str = None, use_sam=True):
+    def __init__(self, X_train, Y_train, X_test, Y_test, handler, img_size =(256, 256), df:pd.DataFrame=None, path:str = None, use_sam=True):
         """
         Data management class for handling labeled and unlabeled data.
 
@@ -230,7 +231,7 @@ class Data:
         self.Y_test = Y_test
         self.handler = handler
         self.use_sam = use_sam
-        self.img_size = (256, 256)
+        self.img_size = img_size
 
         self.n_pool = len(X_train)
         self.n_test = len(X_test)
@@ -264,7 +265,7 @@ class Data:
         """
         labeled_idxs = np.arange(self.n_pool)[self.labeled_idxs]
         labeled_X = [self.X_train[idx] for idx in labeled_idxs]
-        print(len(labeled_X))
+        # print(len(labeled_X))
         labeled_Y = []
         for idx in labeled_idxs:
             if self.use_sam and os.path.isfile(self.df["oracle"][idx]):
@@ -272,7 +273,7 @@ class Data:
             else:
                 labeled_Y.append(self.Y_train[idx])
         # labeled_Y = [self.Y_train[idx] for idx in labeled_idxs]
-        return labeled_idxs, self.handler(labeled_X, labeled_Y, self.use_sam)
+        return labeled_idxs, self.handler(labeled_X, labeled_Y, img_size=self.img_size ,use_sam=self.use_sam)
 
     def get_unlabeled_data(self):
         """
@@ -284,7 +285,7 @@ class Data:
         unlabeled_idxs = np.arange(self.n_pool)[~self.labeled_idxs]
         unlabeled_X = [self.X_train[idx] for idx in unlabeled_idxs]
         unlabeled_Y = [self.Y_train[idx] for idx in unlabeled_idxs]
-        return unlabeled_idxs, self.handler(unlabeled_X, unlabeled_Y, self.use_sam)
+        return unlabeled_idxs, self.handler(unlabeled_X, unlabeled_Y, img_size=self.img_size ,use_sam=self.use_sam)
 
     def get_train_data(self):
         """
@@ -293,7 +294,7 @@ class Data:
         Returns:
             tuple: Labeled indices and transformed training data.
         """
-        return self.labeled_idxs.copy(), self.handler(self.X_train, self.Y_train, self.use_sam)
+        return self.labeled_idxs.copy(), self.handler(self.X_train, self.Y_train, img_size=self.img_size ,use_sam=self.use_sam)
 
     def get_test_data(self):
         """
@@ -302,7 +303,7 @@ class Data:
         Returns:
             tuple: Transformed test data.
         """
-        return self.handler(self.X_test, self.Y_test, self.use_sam)
+        return self.handler(self.X_test, self.Y_test, img_size=self.img_size ,use_sam=self.use_sam)
 
     def cal_test_metrics(self, logits, mask):
         """
@@ -320,7 +321,6 @@ class Data:
 
         # Compute true positive, false positive, false negative, and true negative 'pixels' for each class
         tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), mask.long(), mode="binary")
-
         # Calculate IoU and F1-score
         iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
         accuracy = smp.metrics.accuracy(tp, fp, fn, tn, reduction="micro")

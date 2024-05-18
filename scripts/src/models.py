@@ -14,10 +14,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import tqdm
-from transformers.modeling_outputs import SemanticSegmenterOutput
-
-
-
+import wandb
+import segmentation_models_pytorch as smp
 
 
 class Net:
@@ -35,6 +33,8 @@ class Net:
         self.device = device
         self.loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
         self.losses=[]
+        self.clf = None
+        self.img_size = params["img_size"]
     def train(self, data):
         """
         Trains the neural network model.
@@ -48,34 +48,47 @@ class Net:
         optimizer = optim.SGD(self.clf.parameters(), **self.params['optimizer_args'])
 
         loader = DataLoader(data, shuffle=True, **self.params['train_args'])
-        prog_bar = tqdm.tqdm(range(1, n_epoch + 1), ncols=100)
+        prog_bar = tqdm.tqdm(range(1, n_epoch + 1), ncols=100)#, disable=True)
         for epoch in prog_bar:
             for batch_idx, (x, y, idxs) in enumerate(loader):
                 x, y = x.to(self.device), y.to(self.device)
                 optimizer.zero_grad()
-                out = self.clf(x)
-                    
-                if type(out) is SemanticSegmenterOutput:
-                    out = out.logits
-                    # print("out_shape: ", out.shape)
-                    # print("y_shape: ", y.shape)
-                    out = nn.functional.interpolate(out,
-                                                size=y.shape[-2:],
-                                                mode="bilinear",
-                                                align_corners=False,
-                                            ).argmax(dim=1)
-                    out = out.type(torch.FloatTensor).requires_grad_()
-                    out = out.to(self.device)
-                # print("out_shape: ", out.shape)
-                # print("y_shape: ", y.shape)
-                
+                out = self.clf(x)                                    
                 loss = self.loss_fn(out, y)
+                # iou, accuracy, precision, recall, f1 = self.eval(out, y)
+                # wandb.log({"loss": loss.item(), "training_iou_score":iou, "training_accuracy": accuracy, "training_precision":precision, "training_recall":recall, "training_f1_score":f1})
                 self.losses.append(loss)
                 loss.backward()
                 optimizer.step()
                 # prog_bar.set_postfix({"Dice_loss": loss.item()})
                 prog_bar.set_postfix(loss =  loss.item())
     
+    def eval(self, out, y):
+        """
+        Calculate evaluation metrics for the training data.
+
+        Args:
+            out (torch.Tensor): Logits output of the model.
+            y (torch.Tensor): Ground truth mask.
+
+        Returns:
+            tuple: Intersection over Union (IoU) and F1-score.
+        """
+        prob_mask = out.sigmoid()
+        pred_mask = (prob_mask > 0.5).float()
+
+        # Compute true positive, false positive, false negative, and true negative 'pixels' for each class
+        tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), y.long(), mode="binary")
+        # Calculate IoU and F1-score
+        iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
+        accuracy = smp.metrics.accuracy(tp, fp, fn, tn, reduction="micro")
+        f1 = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
+        recall = smp.metrics.recall(tp, fp, fn, tn, reduction="micro")
+        precision = smp.metrics.precision(tp, fp, fn, tn, reduction="micro")
+        # loss = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
+        # dice_loss = loss(logits, mask)
+
+        return iou, accuracy, precision, recall, f1       
     
     def predict(self, data):
         """
@@ -88,29 +101,19 @@ class Net:
             preds: Predicted masks.
             masks: Ground truth masks.
         """
+        if self.clf is None:
+            self.clf = self.net.to(self.device)
         self.clf.eval()
-        preds = torch.zeros(len(data), 256, 256)
-        masks = torch.zeros(len(data), 256, 256)
+        preds = torch.zeros(len(data), self.img_size[0], self.img_size[1])
+        masks = torch.zeros(len(data), self.img_size[0], self.img_size[1])
         loader = DataLoader(data, shuffle=False, **self.params['test_args'])
         with torch.no_grad():
             for x, y, idxs in loader:
                 x, y = x.to(self.device), y.to(self.device)
-                out = self.clf(x)
-                    
-                if type(out) is SemanticSegmenterOutput:
-                    out = out.logits
-                    out = nn.functional.interpolate(out,
-                                                size=y.shape[-2:],
-                                                mode="bilinear",
-                                                align_corners=False,
-                                            ).argmax(dim=1)
-                    out = out.type(torch.FloatTensor)#.requires_grad_()
-                # print(out.shape)
-                # print(preds.shape)
+                out = self.clf(x)                    
                 preds[idxs] = out.squeeze().cpu()
                 masks[idxs] = y.squeeze().cpu()
-        # if masks.shape == (1024, 1, 1024):
-        #     print(104)
+
         return preds, masks
 
     def predict_prob(self, data):
@@ -124,20 +127,12 @@ class Net:
             probs: Predicted probabilities.
         """
         self.clf.eval()
-        probs = torch.zeros(len(data), 256, 256)
+        probs = torch.zeros(len(data), self.img_size[0], self.img_size[1])
         loader = DataLoader(data, shuffle=False, **self.params['test_args'])
         with torch.no_grad():
             for x, y, idxs in loader:
                 x, y = x.to(self.device), y.to(self.device)
                 out = self.clf(x)
-                if type(out) is SemanticSegmenterOutput:
-                    out = out.logits
-                    out = nn.functional.interpolate(out,
-                                                size=y.shape[-2:],
-                                                mode="bilinear",
-                                                align_corners=False,
-                                            ).argmax(dim=1)
-                    out = out.type(torch.FloatTensor)#.requires_grad_()
                 prob = F.sigmoid(out)
                 probs[idxs] = prob.squeeze().cpu()
         return probs
@@ -154,23 +149,15 @@ class Net:
             probs: Predicted probabilities.
         """
         self.clf.train()
-        probs = torch.zeros(len(data), 256, 256)
+        probs = torch.zeros(len(data), self.img_size[0], self.img_size[1])
         loader = DataLoader(data, shuffle=False, **self.params['test_args'])
         for i in range(n_drop):
             with torch.no_grad():
                 for x, y, idxs in loader:
                     x, y = x.to(self.device), y.to(self.device)
                     out = self.clf(x)
-                    if type(out) is SemanticSegmenterOutput:
-                        out = out.logits
-                        out = nn.functional.interpolate(out,
-                                                    size=y.shape[-2:],
-                                                    mode="bilinear",
-                                                    align_corners=False,
-                                                ).argmax(dim=1)
-                        out = out.type(torch.FloatTensor)#.requires_grad_()
                     prob = F.sigmoid(out)#.view(1, -1)
-                    print(out.shape)
+                    # print(out.shape)
                     probs[idxs] += prob.cpu()
                     
         probs /= n_drop
@@ -195,14 +182,7 @@ class Net:
                 for x, y, idxs in loader:
                     x, y = x.to(self.device), y.to(self.device)
                     out = self.clf(x)
-                    if type(out) is SemanticSegmenterOutput:
-                        out = out.logits
-                        out = nn.functional.interpolate(out,
-                                                    size=y.shape[-2:],
-                                                    mode="bilinear",
-                                                    align_corners=False,
-                                                ).argmax(dim=1)
-                        out = out.type(torch.FloatTensor)#.requires_grad_()
+
                     prob = F.sigmoid(out).view(-1)
                     probs[i][idxs] += prob.cpu()
         return probs
@@ -243,6 +223,7 @@ class Segmentor(pl.LightningModule):
 
         # for image segmentation dice loss could be the best first choice
         self.loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
+        self.training_step_outputs = []
 
     def forward(self, image):
         # normalize image here
@@ -331,27 +312,32 @@ class Segmentor(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         return self.shared_step(batch, "train")
 
-    def training_epoch_end(self, outputs):
+    # def training_epoch_end(self, outputs):
+        # return self.shared_epoch_end(outputs, "train")
+    
+    def on_train_epoch_end(self, outputs):
         return self.shared_epoch_end(outputs, "train")
 
     def validation_step(self, batch, batch_idx):
         return self.shared_step(batch, "valid")
 
-    def validation_epoch_end(self, outputs):
+    # def validation_epoch_end(self, outputs):
+    #     return self.shared_epoch_end(outputs, "valid")
+    
+    def on_validation_epoch_end(self, outputs):
         return self.shared_epoch_end(outputs, "valid")
-
+    
     def test_step(self, batch, batch_idx):
         return self.shared_step(batch, "test")
 
-    def test_epoch_end(self, outputs):
+    # def test_epoch_end(self, outputs):
+    #     return self.shared_epoch_end(outputs, "test")
+    
+    def on_test_epoch_end(self, outputs):
         return self.shared_epoch_end(outputs, "test")
-
+    
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=0.0001)
-
-
-
-
 
 
 class Decoder(nn.Module):

@@ -20,16 +20,18 @@ import os
 import cv2
 import supervision as sv
 import segmentation_models_pytorch as smp
+from models import Net
+
 
 
 class SAMOracle():
     
     def __init__(self,
-                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+                 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu"),
                  model_type = "vit_h",
                  checkpoint_path = os.path.join("../sam","sam_vit_h_4b8939.pth"),
                  model = None,
-                 default_box = {'x': 0, 'y': 0, 'width': 255, 'height': 255, 'label': ''}
+                 img_size=(256, 256)
                 ):
         
         self.device = device
@@ -40,22 +42,28 @@ class SAMOracle():
         
         self.mask_generator = SamAutomaticMaskGenerator(model=self.model,
                                                         # points_per_side=32,
-                                                        pred_iou_thresh=0.90,
+                                                        pred_iou_thresh=0.75,
                                                         stability_score_thresh=0.70,
                                                         # crop_n_layers=1,
                                                         # crop_n_points_downscale_factor=2,
                                                         # min_mask_region_area=100,  # Requires open-cv to run post-processing
                                                     )
-        self.default_box = default_box        
+        self.img_size=img_size        
+        self.default_box = {"x": 0, "y": 0,"width": img_size[0], "height": img_size[1], "label": ''}
         
         
     
-    def get_mask(self, img_path = None, img_rgb=None, boxes=[]):
+    def get_mask(self, img_path = None, img_rgb=None, boxes=[], multimask_output=False):
         
         if img_rgb is None:
-            image_bgr = cv2.imread(img_path)
-            resized = cv2.resize(image_bgr, (256, 256), interpolation=cv2.INTER_CUBIC)
-            img_rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            try:
+                image_bgr = cv2.imread(img_path)
+                resized = cv2.resize(image_bgr, self.img_size, interpolation=cv2.INTER_CUBIC)
+                img_rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            except:
+                print(img_path)
+                image_bgr = cv2.imread(img_path)
+                img_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
             
         self.mask_predictor.set_image(img_rgb)
         
@@ -74,17 +82,50 @@ class SAMOracle():
             point_coords = None,
             point_labels = None,
             boxes=transformed_boxes,
-            multimask_output=False
+            multimask_output=multimask_output   
         )
         mask = masks.sum(axis = 0).cpu().numpy()
         return mask
+    
+    def get_multimask(self, img_path = None, img_rgb=None, boxes=[], multimask_output=True):
+        
+        if img_rgb is None:
+            try:
+                image_bgr = cv2.imread(img_path)
+                resized = cv2.resize(image_bgr, self.img_size, interpolation=cv2.INTER_CUBIC)
+                img_rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            except:
+                print(img_path)
+                image_bgr = cv2.imread(img_path)
+                img_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+            
+        self.mask_predictor.set_image(img_rgb)
+        
+        if len(boxes) <1:
+            boxes = []
+            boxes.append(np.array([
+                        self.default_box['x'],
+                        self.default_box['y'],
+                        self.default_box['x'] + self.default_box['width'],
+                        self.default_box['y'] + self.default_box['height']]))
+            boxes = np.array(boxes)
+        boxes = torch.Tensor(boxes).to(self.device)
+        transformed_boxes = self.mask_predictor.transform.apply_boxes_torch(boxes, img_rgb.shape[:2])
+
+        masks, scores, logits = self.mask_predictor.predict_torch(
+            point_coords = None,
+            point_labels = None,
+            boxes=transformed_boxes,
+            multimask_output=multimask_output   
+        )
+        return masks
     
     def get_boxes(self, mask):
         if torch.is_tensor(mask):
             mask = mask.numpy()
             mask = np.array(mask, np.uint8)
-        _, thresh = cv2.threshold(mask[0,:,:], 0.5, 1, 0)
-        contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        # _, thresh = cv2.threshold(mask, 0.5, 1, 0)
+        contours, _ = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         cnts = []
         for cnt in contours:
             x,y,w,h = cv2.boundingRect(cnt)
@@ -123,7 +164,7 @@ class SAMOracle():
 
 
 class Strategy:
-    def __init__(self, dataset, net, sam:SAMOracle):
+    def __init__(self, dataset, net, sam:SAMOracle, params):
     # def __init__(self, dataset, net):        
         """
         Initializes the Strategy class.
@@ -137,6 +178,7 @@ class Strategy:
         self.sam = sam
         self.human_envolved = 0
         self.sam_failed = []
+        self.params=params
 
     def query(self, n):
         """
@@ -150,7 +192,7 @@ class Strategy:
         """
         pass
 
-    def update(self, pos_idxs, start_sam=False, use_predictor=False, use_generator=False, neg_idxs=None):
+    def update(self, pos_idxs, start_sam=False, use_predictor=False, use_generator=False, neg_idxs=None, round=1):
         """
         Updates the labeled indices in the dataset.
 
@@ -171,24 +213,34 @@ class Strategy:
             self.sam_failed = []
             for idx in pos_idxs:
                 if not os.path.isfile(self.dataset.df["oracle"][idx]):
-                    model_predicted_mask = self.predict(self.dataset.handler([self.dataset.df["images"][idx]], [self.dataset.df["masks"][idx]]))[0]
+                    path = self.dataset.df["oracle"][idx].split("/")
+                    path[-2] = f'oracle_sam_gen_{self.params["img_size"][0]}_{round}'
+                    parent_dir = "/".join(path[:-1])
+                    if not os.path.exists(parent_dir):
+                        os.makedirs(parent_dir)
+                    path = "/".join(path)
                     if not use_predictor:
                         sam_generated_masks=self.sam.generateMasks(self.dataset.df["images"][idx])
-                        index =  self.generatorSelection(model_predicted_mask, sam_generated_masks)
-                        np.save(self.dataset.df["oracle"][idx], sam_generated_masks[index])
+                        majority =  self.generatorSelection(sam_generated_masks)
+                        np.save(path, majority.squeeze())
+                        np.save(self.dataset.df["oracle"][idx], majority.squeeze())
         
                     elif not use_generator:
-        
+                        model_predicted_mask = self.predict(self.dataset.handler([self.dataset.df["images"][idx]], [self.dataset.df["masks"][idx]], img_size=self.params["img_size"]))[0]
+                        model_predicted_mask = (model_predicted_mask.squeeze().cpu().sigmoid()> 0.5).float()                                                    
                         boxes = self.sam.get_boxes(model_predicted_mask)
         
                         if len(boxes)>200:
                             boxes = boxes[:200]
             
                         sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
-                        # print(sam_predicted_mask.shape)
-                        np.save(self.dataset.df["oracle"][idx], sam_predicted_mask)
+                        # print(sam_predicted_mask.shape)        
+                        np.save(path,sam_predicted_mask)
+                        np.save(self.dataset.df["oracle"][idx],sam_predicted_mask)
         
                     else:
+                        model_predicted_mask = self.predict(self.dataset.handler([self.dataset.df["images"][idx]], [self.dataset.df["masks"][idx]], img_size=self.params["img_size"]))[0]
+                        model_predicted_mask = (model_predicted_mask.squeeze().cpu().sigmoid()> 0.5).float()                            
                         sam_generated_masks=self.sam.generateMasks(self.dataset.df["images"][idx])
                         boxes = self.sam.get_boxes(model_predicted_mask)
         
@@ -199,40 +251,157 @@ class Strategy:
             
                         sam_predicted_mask = sam_predicted_mask.squeeze()
                         sam_generated_masks.append(sam_predicted_mask)
-                        index, iou_score = self.generatorSelection(model_predicted_mask, sam_generated_masks)
-                        if iou_score >= 0.5:
-                            np.save(self.dataset.df["oracle"][idx], sam_generated_masks[index])
-                        else:
-                            self.human_envolved +=1
-                            self.dataset.labeled_idxs[idx] = False
-                            self.sam_failed.append(idx)
-                            
+                        majority = self.generatorSelection(sam_generated_masks)
+                        
+                        np.save(path, majority.squeeze())
+                        np.save(self.dataset.df["oracle"][idx], majority.squeeze())
+                        
+        # if neg_idx return the path in 'oracle' to "empty"
+        if neg_idxs:
+            self.dataset.labeled_idxs[neg_idxs] = False
+            
+    def update_voting(self, pos_idxs, start_sam=False, use_predictor=False, use_generator=False, neg_idxs=None, round=0):
+        """
+        Updates the labeled indices in the dataset.
+
+        Args:
+            pos_idxs (ndarray): The indices of positively labeled samples.
+            neg_idxs (ndarray or None): The indices of negatively labeled samples. Defaults to None.
+        """
+        self.dataset.labeled_idxs[pos_idxs] = True
+        states_path = "/root/Master_Thesis/scripts/notebooks/"
+        if start_sam:
+            self.sam_failed = []
+            for idx in pos_idxs:
+                model_predicted_masks = []
+                sam_predicted_masks = []
+                if not os.path.isfile(self.dataset.df["oracle"][idx]):                                
+   
+                    handler = self.dataset.handler([self.dataset.df["images"][idx]], [self.dataset.df["masks"][idx]], img_size=self.params["img_size"])
+      
+                    model_predicted_masks = self.getVotes(9, self.params, handler, round, pos_idxs)
+                    current_mask = self.predict(self.dataset.handler([self.dataset.df["images"][idx]], [self.dataset.df["masks"][idx]], img_size=self.params["img_size"]))[0]
+                    model_predicted_masks.append((current_mask.squeeze().cpu().sigmoid()> 0.5).float())
+                    
+                    for mask in model_predicted_masks:                            
+                        boxes = self.sam.get_boxes(mask)
+    
+                        if len(boxes)>200:
+                            boxes = boxes[:200]
         
+                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes))
+                    
+                    np_sam = np.array(sam_predicted_masks).sum(axis=0)
+                    
+                    
+                    majority = np.array((np_sam.squeeze() > 5), dtype=np.float32)
+                    path = self.dataset.df["oracle"][idx].split("/")
+                    path[-2] = f'oracle_mv_{self.params["img_size"][0]}_{round}'
+                    parent_dir = "/".join(path[:-1])
+                    if not os.path.exists(parent_dir):
+                        os.makedirs(parent_dir)
+                    path = "/".join(path)
+                    
+                    np.save(path, majority.squeeze())
+                    np.save(self.dataset.df["oracle"][idx], majority.squeeze())
+    
         else: 
             self.human_envolved = len(pos_idxs)
         # if neg_idx return the path in 'oracle' to "empty"
         if neg_idxs:
             self.dataset.labeled_idxs[neg_idxs] = False
-            
-    
-    def generatorSelection(self, model_predicted_mask, sam_generated_masks):
         
-        model_predicted_mask = (model_predicted_mask.squeeze().cpu().sigmoid()> 0.5).float()
-        scores = []
-        for index, mask in enumerate(sam_generated_masks):
-            mask = torch.as_tensor(mask).float()
+        return []
+    
+    def getVotes(self, models_num, params, handler, round, pos_idxs):
+        masks = []
+        model = smp.create_model(
+            'Unet', encoder_name='resnet34', in_channels=3, classes = 1
+            )
+        net = Net(model, params, device = torch.device("cuda"))
+        for i in range(1, models_num+1):
+            dir = f'{params["voters"]}{round}'
+            fname = f'{dir}/model_{i}.pt'
             
-            tp, fp, fn, tn = smp.metrics.get_stats(model_predicted_mask.long(), mask.long(), mode="binary")            
-            iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
-            f1 = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
+            if not os.path.isfile(fname):
+                self.dataset.labeled_idxs[pos_idxs] = False
+                labeled_idxs, labeled_data = self.dataset.get_labeled_data()
+                net.net.load_state_dict(torch.load(f'{params["voters"]}0/model_{i}.pt'))
+                print(f"Training model_{i} for voting")
+                net.train(labeled_data)
+                
+                if not os.path.exists(dir):
+                    os.makedirs(dir)
                     
-            scores.append({ 'index': index,
-                           'iou_score': iou,
-                           'f1_score': f1})
-        
-        sorted_scores = sorted(scores, key=(lambda x: x['iou_score']), reverse=True)
-        return sorted_scores[0]["index"], sorted_scores[0]["iou_score"]
+                torch.save(net.net.state_dict(),fname)
+                self.dataset.labeled_idxs[pos_idxs] = True
+            net.net.load_state_dict(torch.load(fname))
+            logits = net.predict(handler)[0]
+            mask = (logits.squeeze().cpu().sigmoid()> 0.5).float()
+            masks.append(mask)
+        return masks
     
+    def update_weighted_voting(self, pos_idxs, start_sam=False, use_predictor=False, use_generator=False, neg_idxs=None, round=0):
+        """
+        Updates the labeled indices in the dataset.
+
+        Args:
+            pos_idxs (ndarray): The indices of positively labeled samples.
+            neg_idxs (ndarray or None): The indices of negatively labeled samples. Defaults to None.
+        """
+        self.dataset.labeled_idxs[pos_idxs] = True
+        states_path = "/root/Master_Thesis/scripts/notebooks/"
+        if start_sam:
+            self.sam_failed = []
+            for idx in pos_idxs:
+                model_predicted_masks = []
+                sam_predicted_masks = []
+                if not os.path.isfile(self.dataset.df["oracle"][idx]):                                               
+          
+                    handler = self.dataset.handler([self.dataset.df["images"][idx]], [self.dataset.df["masks"][idx]], img_size=self.params["img_size"])
+                        
+                    model_predicted_masks = self.getVotes(10, self.params, handler, round, pos_idxs)
+                    current_mask = self.predict(self.dataset.handler([self.dataset.df["images"][idx]], [self.dataset.df["masks"][idx]], img_size=self.params["img_size"]))[0]
+                    model_predicted_masks.append((current_mask.squeeze().cpu().sigmoid()> 0.5).float())
+                    
+                    for mask in model_predicted_masks:                            
+                        boxes = self.sam.get_boxes(mask)
+    
+                        if len(boxes)>200:
+                            boxes = boxes[:200]
+        
+                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes))
+                    
+                    for i in range(10):
+                        sam_predicted_masks[i] = 0.06 * sam_predicted_masks[i]
+                    
+                    sam_predicted_masks[-1] = 0.4 * sam_predicted_masks[-1]
+                    np_sam = np.array(sam_predicted_masks).sum(axis=0)
+                    # print(np_sam.max(), np_sam.min())
+                    majority = np.array((np_sam.squeeze() > 0.55), dtype=np.float32)
+                    
+                    path = self.dataset.df["oracle"][idx].split("/")
+                    path[-2] = f'oracle_wmv_{self.params["img_size"][0]}_{round}'
+                    parent_dir = "/".join(path[:-1])
+                    path = "/".join(path)
+                    if not os.path.exists(parent_dir):
+                        os.makedirs(parent_dir)
+                    np.save(path, majority.squeeze())
+                    np.save(self.dataset.df["oracle"][idx], majority.squeeze())
+    
+        else: 
+            self.human_envolved = len(pos_idxs)
+        # if neg_idx return the path in 'oracle' to "empty"
+        if neg_idxs:
+            self.dataset.labeled_idxs[neg_idxs] = False
+        
+        return []
+    
+    def generatorSelection(self, sam_generated_masks):
+        threshold = len(sam_generated_masks)/2
+        sum_masks = np.array(sam_generated_masks).sum(axis=0)
+        majority = np.array((sum_masks.squeeze() > threshold), dtype=np.float32)
+        return majority
 
     
     
@@ -367,7 +536,7 @@ class EntropySampling(Strategy):
         return top_n_idx
     
 class MarginSampling(Strategy):
-    def __init__(self, dataset, net, sam:SAMOracle):
+    def __init__(self, dataset, net, sam:SAMOracle, params=None):
     # def __init__(self, dataset, net):
         """
         Initializes the MarginSampling strategy.
@@ -376,7 +545,7 @@ class MarginSampling(Strategy):
             dataset: The dataset object.
             net: The network model.
         """
-        super(MarginSampling, self).__init__(dataset, net, sam)
+        super(MarginSampling, self).__init__(dataset, net, sam, params)
 
     def query(self, n):
         """
