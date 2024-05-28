@@ -126,8 +126,9 @@ class Handler(Dataset):
         self.X = X
         self.Y = Y
         self.img_size = img_size
+        self.normalize = False
 
-    def __transform__(self, image, mask):
+    def __transform__(self, image, mask, normalize):
         """
         Apply transformations to the image and mask.
 
@@ -139,25 +140,14 @@ class Handler(Dataset):
             tuple: Transformed image and mask.
         """
         # Resize the image and mask
-        # print("Handler__transform__")
-        # try:
-        #     image = cv2.resize(image, self.img_size, interpolation=cv2.INTER_CUBIC)
-        #     mask = cv2.resize(mask, self.img_size, interpolation=cv2.INTER_CUBIC)
-        # except:
-        #     # print(mask.shape)
-        #     pass
-                
         resize = T.Resize(size=self.img_size, interpolation=Image.NEAREST)
         image = resize(image)
         mask = resize(mask)
-        # if mask.shape == (1024, 1, 1024):
-        #     mask = np.transpose(mask, (1, 2, 0))
-            # print(153)        
         # Transform the image to a tensor
         image = TF.to_tensor(image)
+        if normalize:
+            image = image/255.0
 
-        # Transform the mask to a tensor
-        # mask = TF.to_tensor(mask)
         
         return image, mask
 
@@ -171,37 +161,32 @@ class Handler(Dataset):
         Returns:
             tuple: Image, mask, and index.
         """
-        # print("getting item with handler")
         # Retrieve the label and image at the given index
-        # print("Handler__getitem__")
         label = None
         if self.Y[index].endswith("npy"):
             label = torch.Tensor(np.load(self.Y[index], allow_pickle=True))
             if label.dim() == 2:
                 label = label.unsqueeze(0)
-            # label = np.array(np.load(self.Y[index], allow_pickle=True), np.uint8)
         else:            
-            # label = cv2.cvtColor(cv2.imread(self.Y[index]), cv2.COLOR_BGR2GRAY)
-            # label = TF.to_tensor(cv2.cvtColor(cv2.imread(self.Y[index]), cv2.COLOR_BGR2GRAY))
             label = TF.to_tensor(Image.open(self.Y[index]).convert("L"))
 
         if self.X[index].endswith("npy"):
-            # image = np.load(self.X[index], allow_pickle=True)
             try:
-                image = Image.fromarray(np.load(self.X[index], allow_pickle=True)).convert("RGB")
+                # image = Image.fromarray(np.load(self.X[index], allow_pickle=True)).convert("RGB")
+                image = Image.fromarray(np.load(self.X[index], allow_pickle=True))
             except:
-                image = Image.fromarray(np.load(self.X[index], allow_pickle=True).astype(np.uint8)).convert("RGB")
-            # print("npy shape :", image.size)
+                # print("here")
+                # image = Image.fromarray((np.load(self.X[index], allow_pickle=True) * 255.0).astype(np.uint8)).convert("RGB")
+                image = Image.fromarray((np.load(self.X[index], allow_pickle=True) * 255.0).astype(np.uint8))
+                self.normalize = True
         else:
-            # image = cv2.cvtColor(cv2.imread(self.X[index]), cv2.COLOR_BGR2RGB)
             image = Image.open(self.X[index]).convert("RGB")
             
-        img, mask = self.__transform__(image, label)
-        mask = mask.clamp(max=1.0)
-        # if mask.shape == (1024, 1, 1024):
-        #     mask = np.transpose(mask, (1, 2, 0))
-            # print(191)
+        img, mask = self.__transform__(image, label, self.normalize)
+        mask = mask.clamp(max=1.0)        
         return img, mask, index
+    
+        
 
     def __len__(self):
         """
@@ -314,7 +299,7 @@ class Data:
             mask (torch.Tensor): Ground truth mask.
 
         Returns:
-            tuple: Intersection over Union (IoU) and F1-score.
+            tuple: Intersection over Union (IoU), Accuracy, Precision, Recall and F1-score.
         """
         prob_mask = logits.sigmoid()
         pred_mask = (prob_mask > 0.5).float()

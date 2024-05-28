@@ -54,38 +54,44 @@ class SAMOracle():
         
     
     def get_mask(self, img_path = None, img_rgb=None, boxes=[], multimask_output=False):
-        
-        if img_rgb is None:
-            try:
-                image_bgr = cv2.imread(img_path)
-                resized = cv2.resize(image_bgr, self.img_size, interpolation=cv2.INTER_CUBIC)
-                img_rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-            except:
-                print(img_path)
-                image_bgr = cv2.imread(img_path)
-                img_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+        if len(boxes) == 0:
+            return np.zeros((1, self.img_size[0], self.img_size[1]), dtype=np.uint8)
+        else:
+            if img_rgb is None:
+                try:
+                    if img_path.endswith("npy"):
+                        img_rgb = np.load(img_path, allow_pickle=True)
+                    else:
+                        image_bgr = cv2.imread(img_path)
+                        resized = cv2.resize(image_bgr, self.img_size, interpolation=cv2.INTER_CUBIC)
+                        img_rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+                except:
+                    print(img_path)
+                    image_bgr = cv2.imread(img_path)
+                    img_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+                
+            self.mask_predictor.set_image(img_rgb)
             
-        self.mask_predictor.set_image(img_rgb)
-        
-        if len(boxes) <1:
-            boxes = []
-            boxes.append(np.array([
-                        self.default_box['x'],
-                        self.default_box['y'],
-                        self.default_box['x'] + self.default_box['width'],
-                        self.default_box['y'] + self.default_box['height']]))
-            boxes = np.array(boxes)
-        boxes = torch.Tensor(boxes).to(self.device)
-        transformed_boxes = self.mask_predictor.transform.apply_boxes_torch(boxes, img_rgb.shape[:2])
+            if len(boxes) <1:
+                boxes = []
+                boxes.append(np.array([
+                            self.default_box['x'],
+                            self.default_box['y'],
+                            self.default_box['x'] + self.default_box['width'],
+                            self.default_box['y'] + self.default_box['height']]))
+                boxes = np.array(boxes)
+            boxes = torch.Tensor(boxes).to(self.device)
+            transformed_boxes = self.mask_predictor.transform.apply_boxes_torch(boxes, img_rgb.shape[:2])
 
-        masks, scores, logits = self.mask_predictor.predict_torch(
-            point_coords = None,
-            point_labels = None,
-            boxes=transformed_boxes,
-            multimask_output=multimask_output   
-        )
-        mask = masks.sum(axis = 0).cpu().numpy()
-        return mask
+            masks, scores, logits = self.mask_predictor.predict_torch(
+                point_coords = None,
+                point_labels = None,
+                boxes=transformed_boxes,
+                multimask_output=multimask_output   
+            )
+            mask = masks.sum(axis = 0).cpu().numpy()
+            mask = np.array(mask>0, dtype=np.uint8)
+            return mask
     
     def get_multimask(self, img_path = None, img_rgb=None, boxes=[], multimask_output=True):
         
@@ -213,16 +219,16 @@ class Strategy:
             self.sam_failed = []
             for idx in pos_idxs:
                 if not os.path.isfile(self.dataset.df["oracle"][idx]):
-                    path = self.dataset.df["oracle"][idx].split("/")
-                    path[-2] = f'oracle_sam_gen_{self.params["img_size"][0]}_{round}'
-                    parent_dir = "/".join(path[:-1])
-                    if not os.path.exists(parent_dir):
-                        os.makedirs(parent_dir)
-                    path = "/".join(path)
+                    # path = self.dataset.df["oracle"][idx].split("/")
+                    # path[-2] = f'oracle_sam_gen_{self.params["img_size"][0]}_{round}'
+                    # parent_dir = "/".join(path[:-1])
+                    # if not os.path.exists(parent_dir):
+                    #     os.makedirs(parent_dir)
+                    # path = "/".join(path)
                     if not use_predictor:
                         sam_generated_masks=self.sam.generateMasks(self.dataset.df["images"][idx])
                         majority =  self.generatorSelection(sam_generated_masks)
-                        np.save(path, majority.squeeze())
+                        # np.save(path, majority.squeeze())
                         np.save(self.dataset.df["oracle"][idx], majority.squeeze())
         
                     elif not use_generator:
@@ -235,8 +241,8 @@ class Strategy:
             
                         sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
                         # print(sam_predicted_mask.shape)        
-                        np.save(path,sam_predicted_mask)
-                        np.save(self.dataset.df["oracle"][idx],sam_predicted_mask)
+                        # np.save(path,sam_predicted_mask.squeeze())
+                        np.save(self.dataset.df["oracle"][idx],sam_predicted_mask.squeeze())
         
                     else:
                         model_predicted_mask = self.predict(self.dataset.handler([self.dataset.df["images"][idx]], [self.dataset.df["masks"][idx]], img_size=self.params["img_size"]))[0]
@@ -253,7 +259,7 @@ class Strategy:
                         sam_generated_masks.append(sam_predicted_mask)
                         majority = self.generatorSelection(sam_generated_masks)
                         
-                        np.save(path, majority.squeeze())
+                        # np.save(path, majority.squeeze())
                         np.save(self.dataset.df["oracle"][idx], majority.squeeze())
                         
         # if neg_idx return the path in 'oracle' to "empty"
@@ -295,14 +301,14 @@ class Strategy:
                     
                     
                     majority = np.array((np_sam.squeeze() > 5), dtype=np.float32)
-                    path = self.dataset.df["oracle"][idx].split("/")
-                    path[-2] = f'oracle_mv_{self.params["img_size"][0]}_{round}'
-                    parent_dir = "/".join(path[:-1])
-                    if not os.path.exists(parent_dir):
-                        os.makedirs(parent_dir)
-                    path = "/".join(path)
+                    # path = self.dataset.df["oracle"][idx].split("/")
+                    # path[-2] = f'oracle_mv_{self.params["img_size"][0]}_{round}'
+                    # parent_dir = "/".join(path[:-1])
+                    # if not os.path.exists(parent_dir):
+                    #     os.makedirs(parent_dir)
+                    # path = "/".join(path)
                     
-                    np.save(path, majority.squeeze())
+                    # # np.save(path, majority.squeeze())
                     np.save(self.dataset.df["oracle"][idx], majority.squeeze())
     
         else: 
@@ -320,13 +326,17 @@ class Strategy:
             )
         net = Net(model, params, device = torch.device("cuda"))
         for i in range(1, models_num+1):
-            dir = f'{params["voters"]}{round}'
+            dir = f'{params["model_path"]}_{round}'
             fname = f'{dir}/model_{i}.pt'
             
             if not os.path.isfile(fname):
                 self.dataset.labeled_idxs[pos_idxs] = False
                 labeled_idxs, labeled_data = self.dataset.get_labeled_data()
-                net.net.load_state_dict(torch.load(f'{params["voters"]}0/model_{i}.pt'))
+                init_path = f'{params["model_path"]}_0/model_{i}.pt'
+                if os.path.isfile(init_path):
+                    net.net.load_state_dict(torch.load(init_path))
+                else:
+                    torch.save(net.net.state_dict(), init_path)
                 print(f"Training model_{i} for voting")
                 net.train(labeled_data)
                 
@@ -380,13 +390,13 @@ class Strategy:
                     # print(np_sam.max(), np_sam.min())
                     majority = np.array((np_sam.squeeze() > 0.55), dtype=np.float32)
                     
-                    path = self.dataset.df["oracle"][idx].split("/")
-                    path[-2] = f'oracle_wmv_{self.params["img_size"][0]}_{round}'
-                    parent_dir = "/".join(path[:-1])
-                    path = "/".join(path)
-                    if not os.path.exists(parent_dir):
-                        os.makedirs(parent_dir)
-                    np.save(path, majority.squeeze())
+                    # path = self.dataset.df["oracle"][idx].split("/")
+                    # path[-2] = f'oracle_wmv_{self.params["img_size"][0]}_{round}'
+                    # parent_dir = "/".join(path[:-1])
+                    # path = "/".join(path)
+                    # if not os.path.exists(parent_dir):
+                    #     os.makedirs(parent_dir)
+                    # np.save(path, majority.squeeze())
                     np.save(self.dataset.df["oracle"][idx], majority.squeeze())
     
         else: 
