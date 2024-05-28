@@ -1,3 +1,11 @@
+data/
+expirements/
+sam/
+scripts/notebooks/logs/
+scripts/notebooks/other_foundation_models/
+scripts/notebooks/trained_models/
+scripts/notebooks/wandb/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
