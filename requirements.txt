@@ -6,3 +6,5 @@ segment_anything==1.0
 opencv-python==4.10.0.82
 supervision==0.21.0
 pandas==2.2.2
+kaggle==1.6.14
+scikit_learn==1.5.0
