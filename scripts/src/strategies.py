@@ -240,6 +240,10 @@ class Strategy:
                             boxes = boxes[:200]
             
                         sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
+                        
+                        main_dir = os.path.dirname(self.dataset.df["oracle"][idx])
+                        if not os.path.exists(main_dir):
+                            os.makedirs(main_dir)
                         # print(sam_predicted_mask.shape)        
                         # np.save(path,sam_predicted_mask.squeeze())
                         np.save(self.dataset.df["oracle"][idx],sam_predicted_mask.squeeze())

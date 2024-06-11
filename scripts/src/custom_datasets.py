@@ -175,10 +175,10 @@ class Handler(Dataset):
                 # image = Image.fromarray(np.load(self.X[index], allow_pickle=True)).convert("RGB")
                 image = Image.fromarray(np.load(self.X[index], allow_pickle=True))
             except:
-                # print("here")
+                print("here")
                 # image = Image.fromarray((np.load(self.X[index], allow_pickle=True) * 255.0).astype(np.uint8)).convert("RGB")
-                image = Image.fromarray((np.load(self.X[index], allow_pickle=True) * 255.0).astype(np.uint8))
-                self.normalize = True
+                # image = Image.fromarray((np.load(self.X[index], allow_pickle=True) * 255.0).astype(np.uint8))
+                # self.normalize = True
         else:
             image = Image.open(self.X[index]).convert("RGB")
             
