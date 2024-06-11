@@ -1,0 +1,8 @@
+torch==2.3.1+cu121
+pytorch_lightning==2.2.5
+segmentation_models_pytorch==0.3.3
+wandb==0.17.1
+segment_anything==1.0
+opencv-python==4.10.0.82
+supervision==0.21.0
+pandas==2.2.2
