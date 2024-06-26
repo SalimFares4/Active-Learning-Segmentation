@@ -231,8 +231,8 @@ class Strategy:
                         majority =  self.generatorSelection(sam_generated_masks)
                         # np.save(path, majority.squeeze())
                         oracle_dir = os.path.dirname(self.dataset.df["oracle"][idx])
-                            if not os.path.exists(oracle_dir):
-                                os.makedirs(oracle_dir)
+                        if not os.path.exists(oracle_dir):
+                            os.makedirs(oracle_dir)
                         np.save(self.dataset.df["oracle"][idx], majority.squeeze())
         
                     elif not use_generator:
@@ -311,20 +311,24 @@ class Strategy:
                         sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes))
                     masks_arr = np.array(sam_predicted_masks)
                     most_similar = self.db_scan.fit(masks_arr)
-                    np_sam = masks_arr[most_similar].sum(axis=0)
-                    majority = np.array((np_sam.squeeze() > 5), dtype=np.float32)
-                    # path = self.dataset.df["oracle"][idx].split("/")
-                    # path[-2] = f'oracle_mv_{self.params["img_size"][0]}_{round}'
-                    # parent_dir = "/".join(path[:-1])
-                    # if not os.path.exists(parent_dir):
-                    #     os.makedirs(parent_dir)
-                    # path = "/".join(path)
-                    
-                    # # np.save(path, majority.squeeze())
-                    oracle_dir = os.path.dirname(self.dataset.df["oracle"][idx])
-                    if not os.path.exists(oracle_dir):
-                        os.makedirs(oracle_dir)
-                    np.save(self.dataset.df["oracle"][idx], majority.squeeze())
+                    if len(most_similar)<0:
+                        self.dataset.labeled_idxs[idx] = False
+                        print(f"Sample {idx} was rejected due to randomness in generated masks")
+                    else:
+                        np_sam = masks_arr[most_similar].sum(axis=0)
+                        majority = np.array((np_sam.squeeze() > 5), dtype=np.float32)
+                        # path = self.dataset.df["oracle"][idx].split("/")
+                        # path[-2] = f'oracle_mv_{self.params["img_size"][0]}_{round}'
+                        # parent_dir = "/".join(path[:-1])
+                        # if not os.path.exists(parent_dir):
+                        #     os.makedirs(parent_dir)
+                        # path = "/".join(path)
+                        
+                        # # np.save(path, majority.squeeze())
+                        oracle_dir = os.path.dirname(self.dataset.df["oracle"][idx])
+                        if not os.path.exists(oracle_dir):
+                            os.makedirs(oracle_dir)
+                        np.save(self.dataset.df["oracle"][idx], majority.squeeze())
     
         else: 
             self.human_envolved = len(pos_idxs)
@@ -352,7 +356,7 @@ class Strategy:
                     net.net.load_state_dict(torch.load(init_path))
                 else:
                     torch.save(net.net.state_dict(), init_path)
-                print(f"Training model_{i} for voting")
+                # print(f"Training model_{i} for voting")
                 net.train(labeled_data)
                 
                 if not os.path.exists(dir):

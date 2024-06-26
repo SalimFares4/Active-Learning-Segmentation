@@ -14,7 +14,6 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import tqdm
-import wandb
 import segmentation_models_pytorch as smp
 
 
@@ -48,7 +47,7 @@ class Net:
         optimizer = optim.SGD(self.clf.parameters(), **self.params['optimizer_args'])
 
         loader = DataLoader(data, shuffle=True, **self.params['train_args'])
-        prog_bar = tqdm.tqdm(range(1, n_epoch + 1), ncols=100)#, disable=True)
+        prog_bar = tqdm.tqdm(range(1, n_epoch + 1), ncols=100), disable=True)
         for epoch in prog_bar:
             for batch_idx, (x, y, idxs) in enumerate(loader):
                 x, y = x.to(self.device), y.to(self.device)
