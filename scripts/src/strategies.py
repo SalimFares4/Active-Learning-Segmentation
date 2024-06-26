@@ -308,14 +308,17 @@ class Strategy:
                         if len(boxes)>200:
                             boxes = boxes[:200]
         
-                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes))
+                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes))                
                     masks_arr = np.array(sam_predicted_masks)
-                    most_similar = self.db_scan.fit(masks_arr)
-                    if len(most_similar)<0:
-                        self.dataset.labeled_idxs[idx] = False
-                        print(f"Sample {idx} was rejected due to randomness in generated masks")
+                    if self.params["similarity_check"]:
+                        most_similar = self.db_scan.fit(masks_arr)
+                        if len(most_similar)<0:
+                            self.dataset.labeled_idxs[idx] = False
+                            print(f"Sample {idx} was rejected due to randomness in generated masks")
+                        else:
+                            np_sam = masks_arr[most_similar].sum(axis=0)
                     else:
-                        np_sam = masks_arr[most_similar].sum(axis=0)
+                        np_sam = masks_arr.sum(axis=0)
                         majority = np.array((np_sam.squeeze() > 5), dtype=np.float32)
                         # path = self.dataset.df["oracle"][idx].split("/")
                         # path[-2] = f'oracle_mv_{self.params["img_size"][0]}_{round}'
