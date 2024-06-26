@@ -230,6 +230,9 @@ class Strategy:
                         sam_generated_masks=self.sam.generateMasks(self.dataset.df["images"][idx])
                         majority =  self.generatorSelection(sam_generated_masks)
                         # np.save(path, majority.squeeze())
+                        oracle_dir = os.path.dirname(self.dataset.df["oracle"][idx])
+                            if not os.path.exists(oracle_dir):
+                                os.makedirs(oracle_dir)
                         np.save(self.dataset.df["oracle"][idx], majority.squeeze())
         
                     elif not use_generator:
@@ -247,6 +250,9 @@ class Strategy:
                             os.makedirs(main_dir)
                         # print(sam_predicted_mask.shape)        
                         # np.save(path,sam_predicted_mask.squeeze())
+                        oracle_dir = os.path.dirname(self.dataset.df["oracle"][idx])
+                        if not os.path.exists(oracle_dir):
+                            os.makedirs(oracle_dir)
                         np.save(self.dataset.df["oracle"][idx],sam_predicted_mask.squeeze())
         
                     else:
@@ -263,6 +269,9 @@ class Strategy:
                         sam_predicted_mask = sam_predicted_mask.squeeze()
                         sam_generated_masks.append(sam_predicted_mask)
                         majority = self.generatorSelection(sam_generated_masks)
+                        oracle_dir = os.path.dirname(self.dataset.df["oracle"][idx])
+                        if not os.path.exists(oracle_dir):
+                            os.makedirs(oracle_dir)
                         
                         # np.save(path, majority.squeeze())
                         np.save(self.dataset.df["oracle"][idx], majority.squeeze())
@@ -312,6 +321,9 @@ class Strategy:
                     # path = "/".join(path)
                     
                     # # np.save(path, majority.squeeze())
+                    oracle_dir = os.path.dirname(self.dataset.df["oracle"][idx])
+                    if not os.path.exists(oracle_dir):
+                        os.makedirs(oracle_dir)
                     np.save(self.dataset.df["oracle"][idx], majority.squeeze())
     
         else: 
