@@ -27,7 +27,7 @@ from models import Net
 class SAMOracle():
     
     def __init__(self,
-                 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu"),
+                 device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
                  model_type = "vit_h",
                  checkpoint_path = os.path.join("../sam","sam_vit_h_4b8939.pth"),
                  model = None,
@@ -170,7 +170,7 @@ class SAMOracle():
 
 
 class Strategy:
-    def __init__(self, dataset, net, sam:SAMOracle, params):
+    def __init__(self, dataset, net, sam:SAMOracle, params, db_scan=None):
     # def __init__(self, dataset, net):        
         """
         Initializes the Strategy class.
@@ -185,6 +185,7 @@ class Strategy:
         self.human_envolved = 0
         self.sam_failed = []
         self.params=params
+        self.db_scan=db_scan
 
     def query(self, n):
         """
@@ -288,7 +289,6 @@ class Strategy:
                 if not os.path.isfile(self.dataset.df["oracle"][idx]):                                
    
                     handler = self.dataset.handler([self.dataset.df["images"][idx]], [self.dataset.df["masks"][idx]], img_size=self.params["img_size"])
-      
                     model_predicted_masks = self.getVotes(9, self.params, handler, round, pos_idxs)
                     current_mask = self.predict(self.dataset.handler([self.dataset.df["images"][idx]], [self.dataset.df["masks"][idx]], img_size=self.params["img_size"]))[0]
                     model_predicted_masks.append((current_mask.squeeze().cpu().sigmoid()> 0.5).float())
@@ -300,10 +300,9 @@ class Strategy:
                             boxes = boxes[:200]
         
                         sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes))
-                    
-                    np_sam = np.array(sam_predicted_masks).sum(axis=0)
-                    
-                    
+                    masks_arr = np.array(sam_predicted_masks)
+                    most_similar = self.db_scan.fit(masks_arr)
+                    np_sam = masks_arr[most_similar].sum(axis=0)
                     majority = np.array((np_sam.squeeze() > 5), dtype=np.float32)
                     # path = self.dataset.df["oracle"][idx].split("/")
                     # path[-2] = f'oracle_mv_{self.params["img_size"][0]}_{round}'
@@ -550,7 +549,7 @@ class EntropySampling(Strategy):
         return top_n_idx
     
 class MarginSampling(Strategy):
-    def __init__(self, dataset, net, sam:SAMOracle, params=None):
+    def __init__(self, dataset, net, sam:SAMOracle, params=None, db_scan=None):
     # def __init__(self, dataset, net):
         """
         Initializes the MarginSampling strategy.
@@ -559,7 +558,7 @@ class MarginSampling(Strategy):
             dataset: The dataset object.
             net: The network model.
         """
-        super(MarginSampling, self).__init__(dataset, net, sam, params)
+        super(MarginSampling, self).__init__(dataset, net, sam, params, db_scan)
 
     def query(self, n):
         """
