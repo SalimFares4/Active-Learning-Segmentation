@@ -62,12 +62,15 @@ class Similarities():
         pass
     
     def iou_score(self, x, y):
-        
-        prob_mask = torch.tensor(x).sigmoid()
+        if not torch.is_tensor(x):
+            x = torch.tensor(x)
+        if not torch.is_tensor(y):
+            y = torch.tensor(y)
+        prob_mask = x.sigmoid()
         pred_mask = (prob_mask > 0.5).float()
 
         # Compute true positive, false positive, false negative, and true negative 'pixels' for each class
-        tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), torch.tensor(y).long(), mode="binary")
+        tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), y.long(), mode="binary")
         # Calculate IoU
         iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
         return iou
@@ -76,10 +79,10 @@ class Similarities():
         return np.dot(x.flatten(), y.flatten()) / (np.sqrt(np.dot(x.flatten(), x.flatten())) * np.sqrt(np.dot(y.flatten(), y.flatten())))
 
     def eculidian_distance(self, x, y):
-        return 1+(self.l2_normalize(x) - self.l2_normalize(y)).pow(2).sum().sqrt()
+        return 1 - (self.l2_normalize(x) - self.l2_normalize(y)).pow(2).sum().sqrt()
         
     def l2_normalize(self, v):
-        norm = np.sqrt(np.sum(np.square(v)))
+        norm = np.sqrt(np.square(v).sum())
         return v / norm
 
         

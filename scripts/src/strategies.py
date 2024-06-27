@@ -303,7 +303,7 @@ class Strategy:
                         sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes))                
                     masks_arr = np.array(sam_predicted_masks)
                     threshold = len(sam_predicted_masks) //2
-                    if self.params["similarity_check"]:
+                    if self.params["similarity_check"] and masks_arr.sum() != 0:
                         most_similar = self.db_scan.fit(masks_arr)
                         if len(most_similar)<0:
                             self.dataset.labeled_idxs[idx] = False
