@@ -72,14 +72,6 @@ class SAMOracle():
                 
             self.mask_predictor.set_image(img_rgb)
             
-            if len(boxes) <1:
-                boxes = []
-                boxes.append(np.array([
-                            self.default_box['x'],
-                            self.default_box['y'],
-                            self.default_box['x'] + self.default_box['width'],
-                            self.default_box['y'] + self.default_box['height']]))
-                boxes = np.array(boxes)
             boxes = torch.Tensor(boxes).to(self.device)
             transformed_boxes = self.mask_predictor.transform.apply_boxes_torch(boxes, img_rgb.shape[:2])
 
@@ -310,28 +302,32 @@ class Strategy:
         
                         sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes))                
                     masks_arr = np.array(sam_predicted_masks)
+                    threshold = len(sam_predicted_masks) //2
                     if self.params["similarity_check"]:
                         most_similar = self.db_scan.fit(masks_arr)
                         if len(most_similar)<0:
                             self.dataset.labeled_idxs[idx] = False
                             print(f"Sample {idx} was rejected due to randomness in generated masks")
+                            continue
                         else:
                             np_sam = masks_arr[most_similar].sum(axis=0)
+                            treshold = len(most_similar)//2
                     else:
                         np_sam = masks_arr.sum(axis=0)
-                        majority = np.array((np_sam.squeeze() > 5), dtype=np.float32)
-                        # path = self.dataset.df["oracle"][idx].split("/")
-                        # path[-2] = f'oracle_mv_{self.params["img_size"][0]}_{round}'
-                        # parent_dir = "/".join(path[:-1])
-                        # if not os.path.exists(parent_dir):
-                        #     os.makedirs(parent_dir)
-                        # path = "/".join(path)
-                        
-                        # # np.save(path, majority.squeeze())
-                        oracle_dir = os.path.dirname(self.dataset.df["oracle"][idx])
-                        if not os.path.exists(oracle_dir):
-                            os.makedirs(oracle_dir)
-                        np.save(self.dataset.df["oracle"][idx], majority.squeeze())
+                    
+                    majority = np.array((np_sam.squeeze() > threshold), dtype=np.float32)
+                    # path = self.dataset.df["oracle"][idx].split("/")
+                    # path[-2] = f'oracle_mv_{self.params["img_size"][0]}_{round}'
+                    # parent_dir = "/".join(path[:-1])
+                    # if not os.path.exists(parent_dir):
+                    #     os.makedirs(parent_dir)
+                    # path = "/".join(path)
+                    
+                    # # np.save(path, majority.squeeze())
+                    oracle_dir = os.path.dirname(self.dataset.df["oracle"][idx])
+                    if not os.path.exists(oracle_dir):
+                        os.makedirs(oracle_dir)
+                    np.save(self.dataset.df["oracle"][idx], majority.squeeze())
     
         else: 
             self.human_envolved = len(pos_idxs)
