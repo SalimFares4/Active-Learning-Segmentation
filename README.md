@@ -1,11 +1,15 @@
 # Active-Learning-Segmentation
 
 ```
-git clone https://github.com/SalimFares4/Active-Learning-Segmentation.git
+conda create -n myenv python=3.9.18
 ```
 
 ```
-conda create -n myenv python=3.9.18
+conda activate myenv
+```
+
+```
+git clone https://github.com/SalimFares4/Active-Learning-Segmentation.git
 ```
 
 ```
