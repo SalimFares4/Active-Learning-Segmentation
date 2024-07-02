@@ -53,7 +53,7 @@ class SAMOracle():
         
         
     
-    def get_mask(self, img_path = None, img_rgb=None, boxes=[], multimask_output=False):
+    def get_mask(self, img_path = None, img_rgb=None, boxes=[], multimask_output=True):
         if len(boxes) == 0:
             return np.zeros((1, self.img_size[0], self.img_size[1]), dtype=np.uint8)
         else:
@@ -81,42 +81,14 @@ class SAMOracle():
                 boxes=transformed_boxes,
                 multimask_output=multimask_output   
             )
-            mask = masks.sum(axis = 0).cpu().numpy()
+            box_scores = scores.cpu().numpy()
+            best_matches = []
+            for box_score in box_scores:
+                best_matches .append(box_mask[np.argmax(box_score)])
+                
+            mask = sum(best_matches)
             mask = np.array(mask>0, dtype=np.uint8)
             return mask
-    
-    def get_multimask(self, img_path = None, img_rgb=None, boxes=[], multimask_output=True):
-        
-        if img_rgb is None:
-            try:
-                image_bgr = cv2.imread(img_path)
-                resized = cv2.resize(image_bgr, self.img_size, interpolation=cv2.INTER_CUBIC)
-                img_rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-            except:
-                print(img_path)
-                image_bgr = cv2.imread(img_path)
-                img_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-            
-        self.mask_predictor.set_image(img_rgb)
-        
-        if len(boxes) <1:
-            boxes = []
-            boxes.append(np.array([
-                        self.default_box['x'],
-                        self.default_box['y'],
-                        self.default_box['x'] + self.default_box['width'],
-                        self.default_box['y'] + self.default_box['height']]))
-            boxes = np.array(boxes)
-        boxes = torch.Tensor(boxes).to(self.device)
-        transformed_boxes = self.mask_predictor.transform.apply_boxes_torch(boxes, img_rgb.shape[:2])
-
-        masks, scores, logits = self.mask_predictor.predict_torch(
-            point_coords = None,
-            point_labels = None,
-            boxes=transformed_boxes,
-            multimask_output=multimask_output   
-        )
-        return masks
     
     def get_boxes(self, mask):
         if torch.is_tensor(mask):
