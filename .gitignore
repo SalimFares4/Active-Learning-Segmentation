@@ -7,6 +7,8 @@ scripts/notebooks/trained_models/
 scripts/notebooks/wandb/
 scripts/notebooks/04-Data-preparation.ipynb
 scripts/notebooks/06-Majority_Voting_training.ipynb
+scripts/notebooks/08-Comparison.ipynb
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
