@@ -18,7 +18,7 @@ import pandas as pd
 import torch.nn as nn
 from matplotlib import cm
 import cv2
-
+from dbscan import Similarities
 # class AL_Seg_dataset(Dataset):
 #     def __init__(self, inp_df, img_size=(256,256),init = True, transform=True, use_sam = True):
 #         # Initialize the Dataset class
@@ -224,6 +224,7 @@ class Data:
         self.labeled_idxs = np.zeros(self.n_pool, dtype=bool)
         self.df=df
         self.path=path
+        self.similarity = Similarities()
 
     def initialize_labels(self, num):
         """
@@ -299,7 +300,7 @@ class Data:
             mask (torch.Tensor): Ground truth mask.
 
         Returns:
-            tuple: Intersection over Union (IoU), Accuracy, Precision, Recall and F1-score.
+            tuple: Intersection over Union (IoU), DiceLoss, cosine_similarity, eculidian_distance and F1-score.
         """
         prob_mask = logits.sigmoid()
         pred_mask = (prob_mask > 0.5).float()
@@ -308,13 +309,15 @@ class Data:
         tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), mask.long(), mode="binary")
         # Calculate IoU and F1-score
         iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
-        accuracy = smp.metrics.accuracy(tp, fp, fn, tn, reduction="micro")
+        # accuracy = smp.metrics.accuracy(tp, fp, fn, tn, reduction="micro")
         f1 = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
-        recall = smp.metrics.recall(tp, fp, fn, tn, reduction="micro")
-        precision = smp.metrics.precision(tp, fp, fn, tn, reduction="micro")
-        # loss = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
-        # dice_loss = loss(logits, mask)
+        # recall = smp.metrics.recall(tp, fp, fn, tn, reduction="micro")
+        # precision = smp.metrics.precision(tp, fp, fn, tn, reduction="micro")
+        loss = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
+        dice_loss = loss(logits, mask)
+        cosine_similarity = self.similarity.cosine_similarity(pred_mask.long(), mask.long())
+        eculidian_distance = self.similarity.eculidian_distance(pred_mask.long(), mask.long())
 
-        return iou, accuracy, precision, recall, f1
+        return iou, dice_loss, cosine_similarity, eculidian_distance, f1
 
 
