@@ -84,7 +84,7 @@ class SAMOracle():
             box_scores = scores.cpu().numpy()
             masks = masks.cpu().numpy()
             best_matches = []
-            for i in len(box_scores):
+            for i in range(len(box_scores)):
                 best_matches .append(masks[i][np.argmax(box_score[i])])
                 
             mask = sum(best_matches)
