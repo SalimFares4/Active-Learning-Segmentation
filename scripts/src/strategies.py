@@ -82,9 +82,10 @@ class SAMOracle():
                 multimask_output=multimask_output   
             )
             box_scores = scores.cpu().numpy()
+            masks = masks.cpu().numpy()
             best_matches = []
-            for box_score in box_scores:
-                best_matches .append(box_mask[np.argmax(box_score)])
+            for i in len(box_scores):
+                best_matches .append(masks[i][np.argmax(box_score[i])])
                 
             mask = sum(best_matches)
             mask = np.array(mask>0, dtype=np.uint8)
