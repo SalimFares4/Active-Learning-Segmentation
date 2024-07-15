@@ -21,6 +21,7 @@ import cv2
 import supervision as sv
 import segmentation_models_pytorch as smp
 from models import Net
+from unet_model import *
 
 
 
@@ -273,7 +274,7 @@ class Strategy:
                         if len(boxes)>200:
                             boxes = boxes[:200]
         
-                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes))                
+                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes).squeeze())                
                     masks_arr = np.array(sam_predicted_masks)
                     threshold = len(sam_predicted_masks) //2
                     if self.params["similarity_check"] and masks_arr.sum() != 0:
@@ -312,9 +313,12 @@ class Strategy:
     
     def getVotes(self, models_num, params, handler, round, pos_idxs):
         masks = []
-        model = smp.create_model(
-            'Unet', encoder_name='resnet34', in_channels=3, classes = 1
-            )
+        if params["pre_trained"]:
+            model = smp.create_model(
+                'Unet', encoder_name='resnet34', in_channels=3, classes = 1
+                )
+        else:
+            model = UNet(n_channels=3, n_classes=1, bilinear=True)
         net = Net(model, params, device = torch.device("cuda"))
         for i in range(1, models_num+1):
             dir = f'{params["model_path"]}_{round}'
