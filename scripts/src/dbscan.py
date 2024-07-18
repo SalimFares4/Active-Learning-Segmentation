@@ -85,4 +85,68 @@ class Similarities():
         norm = np.sqrt(np.square(v).sum())
         return v / norm
 
+
+class Gestalt():
+    
+    def __init__(self):
+        pass
+
+    def find_contours(self, mask):
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        return contours
+    
+    def find_centroids(self, mask):
+        contours, _ = self.find_contours(mask)
+        centroids = []
+        for contour in contours:
+            M = cv2.moments(contour)
+            if M['m00'] != 0:
+                cX = int(M['m10'] / M['m00'])
+                cY = int(M['m01'] / M['m00'])
+                centroids.append((cX, cY))
+        return np.array(centroids)
+
+    def proximity(self, mask1, mask2):
+        centroids1 = self.find_centroids(mask1)
+        centroids2 = self.find_centroids(mask2)
         
+        if len(centroids1) == 0 or len(centroids2) == 0:
+            return float('inf')  # No centroids found in one of the masks
+        
+        distances = cdist(centroids1, centroids2, metric='euclidean')
+        min_distances = np.min(distances, axis=1)
+        average_distance = np.mean(min_distances)
+    
+        max_distance = np.sqrt(mask1.shape[0]**2 + mask1.shape[1]**2)
+        
+        similarity = 1 - average_distance / max_distance
+        
+        return similarity
+
+    def check_closure(self, contours):
+        closed_contours = 0
+        for contour in contours:
+            # Approximate the contour to simplify the shape
+            epsilon = 0.01 * cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, epsilon, True)
+            # Check if the approximated contour is closed
+            if cv2.isContourConvex(approx):
+                closed_contours += 1
+        return closed_contours
+
+    def compare_closure(self, mask1, mask2):
+        contours1 = self.find_contours(mask1)
+        contours2 = self.find_contours(mask2)
+        
+        closed_contours1 = self.check_closure(contours1)
+        closed_contours2 = self.check_closure(contours2)
+        
+        # Calculate the closure similarity
+        total_contours = max(len(contours1), len(contours2))
+        if total_contours == 0:
+            return 1.0  # No contours in either mask, consider it perfect closure similarity
+        
+        closure_distance = abs(closed_contours1 - closed_contours2) / total_contours
+        closure_similarity = 1 - closure_distance  # Higher value means more similar
+        
+        return closure_similarity
