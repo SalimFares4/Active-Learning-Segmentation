@@ -85,7 +85,7 @@ class Similarities():
         return 0.5 * ((np.dot(x, y) / (np.sqrt(np.dot(x, x)) * np.sqrt(np.dot(y, y)))) + 1)
 
     def eculidian_distance(self, x, y):
-        return 1 - (self.l2_normalize(x) - self.l2_normalize(y)).pow(2).sum().sqrt()
+        return 1 - (self.l2_normalize(x) - self.l2_normalize(y)).pow(2).sum().sqrt()/2.0
         
     def l2_normalize(self, v):
         norm = np.sqrt(np.square(v).sum())
