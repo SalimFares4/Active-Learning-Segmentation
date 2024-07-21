@@ -1,18 +1,22 @@
 import numpy as np
 import torch
 import segmentation_models_pytorch as smp
-
+import cv2
+from scipy.spatial.distance import cdist
 
 class DBScan():
-    def __init__(self, similarity, eps = 0.3, min_samples=4):
-        self.similarity = similarity
+    def __init__(self, similarities, eps = 0.3, min_samples=4):
+        self.similarities = similarities
         self.eps=eps
         self.min_samples = min_samples
 
 
     
     def distance(self, x1, x2):
-        return 1 - self.similarity(x1, x2)
+        distance = 0
+        for similarity in self.similarities:
+            distance+= 1 - similarity(x1, x2)
+        return distance/float(len(self.similarities))
         
     def fit(self, masks):
        
@@ -30,7 +34,7 @@ class DBScan():
             visited[i] = True
      
             # Find neighbors
-            neighbors = torch.nonzero(torch.tensor(np.array([self.distance(masks[i], masks[j]) < self.eps for j in range(len(masks))])))
+            neighbors = torch.nonzero(torch.tensor(np.array([1.0 if i==j else self.distance(masks[i], masks[j]) < self.eps for j in range(len(masks))])))
             if neighbors.shape[0] < self.min_samples:
                 # Label as noise
                 labels[i] = 0
@@ -76,7 +80,9 @@ class Similarities():
         return iou
 
     def cosine_similarity(self, x, y):
-        return np.dot(x.flatten(), y.flatten()) / (np.sqrt(np.dot(x.flatten(), x.flatten())) * np.sqrt(np.dot(y.flatten(), y.flatten())))
+        x = x.float().flatten()
+        y = y.float().flatten()
+        return 0.5 * ((np.dot(x, y) / (np.sqrt(np.dot(x, x)) * np.sqrt(np.dot(y, y)))) + 1)
 
     def eculidian_distance(self, x, y):
         return 1 - (self.l2_normalize(x) - self.l2_normalize(y)).pow(2).sum().sqrt()
@@ -92,8 +98,10 @@ class Gestalt():
         pass
 
     def find_contours(self, mask):
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        return contours
+        if torch.is_tensor(mask):
+            mask = mask.numpy()
+        contours, hierarchy = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        return contours, hierarchy
     
     def find_centroids(self, mask):
         contours, _ = self.find_contours(mask)
@@ -123,23 +131,20 @@ class Gestalt():
         
         return similarity
 
-    def check_closure(self, contours):
+    def count_closures(self, contours, hierarchy):
         closed_contours = 0
-        for contour in contours:
-            # Approximate the contour to simplify the shape
-            epsilon = 0.01 * cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, epsilon, True)
-            # Check if the approximated contour is closed
-            if cv2.isContourConvex(approx):
+        for i in range(len(contours)):
+            opened = hierarchy[0][i][2]<0 and hierarchy[0][i][3]<0            
+            if not opened:
                 closed_contours += 1
         return closed_contours
 
-    def compare_closure(self, mask1, mask2):
-        contours1 = self.find_contours(mask1)
-        contours2 = self.find_contours(mask2)
+    def closure(self, mask1, mask2):
+        contours1, hierarchy1  = self.find_contours(mask1)
+        contours2, hierarchy2  = self.find_contours(mask2)
         
-        closed_contours1 = self.check_closure(contours1)
-        closed_contours2 = self.check_closure(contours2)
+        closed_contours1 = self.count_closures(contours1, hierarchy1)
+        closed_contours2 = self.count_closures(contours2, hierarchy2)
         
         # Calculate the closure similarity
         total_contours = max(len(contours1), len(contours2))
