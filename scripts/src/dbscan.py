@@ -5,18 +5,18 @@ import cv2
 from scipy.spatial.distance import cdist
 
 class DBScan():
-    def __init__(self, similarities, eps = 0.3, min_samples=4):
+    def __init__(self, similarities, epses, min_samples=4):
         self.similarities = similarities
-        self.eps=eps
+        self.epses=epses
         self.min_samples = min_samples
 
 
     
-    def distance(self, x1, x2):
-        distance = 0
-        for similarity in self.similarities:
-            distance+= 1 - similarity(x1, x2)
-        return distance/float(len(self.similarities))
+    def check_similarity(self, x1, x2):
+        for similarity, eps in zip(self.similarities, self.epses):
+            if 1 - similarity(x1, x2) > eps:
+                return 0.
+        return 1.
         
     def fit(self, masks):
        
@@ -34,7 +34,7 @@ class DBScan():
             visited[i] = True
      
             # Find neighbors
-            neighbors = torch.nonzero(torch.tensor(np.array([1.0 if i==j else self.distance(masks[i], masks[j]) < self.eps for j in range(len(masks))])))
+            neighbors = torch.nonzero(torch.tensor(np.array([1.0 if i==j else self.check_similarity(masks[i], masks[j]) for j in range(len(masks))])))
             if neighbors.shape[0] < self.min_samples:
                 # Label as noise
                 labels[i] = 0
@@ -52,7 +52,7 @@ class DBScan():
             neighbor_index = neighbors[i].item()
             if not visited[neighbor_index]:
                 visited[neighbor_index] = True
-                neighbor_neighbors = torch.nonzero(torch.tensor(np.array([self.distance(masks[neighbor_index], masks[j]) < self.eps for j in range(len(masks))])))
+                neighbor_neighbors = torch.nonzero(torch.tensor(np.array([self.check_similarity(masks[neighbor_index], masks[j]) for j in range(len(masks))])))
                 if neighbor_neighbors.shape[0] >= self.min_samples:
                     neighbors = torch.cat((neighbors, neighbor_neighbors))
             if labels[neighbor_index] == 0:
@@ -131,6 +131,43 @@ class Gestalt():
         
         return similarity
 
+    def get_area(self, contours):
+        if len(contours)==0:
+            return 0
+        area=0
+        for cnt in contour:
+            area+=cv2.contourArea(cnt)
+        return area
+        
+    def similarity_area(self, mask1, mask2):
+        contours1, _  = self.find_contours(mask1)
+        contours2, _  = self.find_contours(mask2)
+        
+        area1 = get_area(contours1)
+        area2 = get_area(contours2)
+        if area1==0 and area2==0:
+            return 1.
+        return abs(area1-area2)/float(area1+area2)
+
+    def get_perimeter(self, contours):
+        if len(contours)==0:
+            return 0
+        perimeter=0
+        for cnt in contour:
+            perimeter+=cv2.arcLength(cnt,True)
+        return perimeter
+        
+    def similarity_perimeter(self, mask1, mask2):
+        contours1, _  = self.find_contours(mask1)
+        contours2, _  = self.find_contours(mask2)
+        
+        perimeter1 = get_perimeter(contours1)
+        perimeter2 = get_perimeter(contours2)
+        
+        if perimeter1==0 and perimeter2==0:
+            return 1.
+        return abs(perimeter1-perimeter2)/float(perimeter1+perimeter2)
+        
     def count_closures(self, contours, hierarchy):
         closed_contours = 0
         for i in range(len(contours)):

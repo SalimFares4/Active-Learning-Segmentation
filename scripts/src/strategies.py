@@ -54,7 +54,7 @@ class SAMOracle():
         
         
     
-    def get_mask(self, img_path = None, img_rgb=None, boxes=[], multimask_output=True):
+    def get_mask(self, img_path = None, img_rgb=None, mask=None,boxes=[], multimask_output=True):
         if len(boxes) == 0:
             return np.zeros((1, self.img_size[0], self.img_size[1]), dtype=np.uint8)
         else:
@@ -62,6 +62,8 @@ class SAMOracle():
                 try:
                     if img_path.endswith("npy"):
                         img_rgb = np.load(img_path, allow_pickle=True)
+                        if img_rgb.shape[0]!=self.img_size[0]:
+                            img_rgb=cv2.resize(img_rgb, self.img_size, interpolation=cv2.INTER_CUBIC)
                     else:
                         image_bgr = cv2.imread(img_path)
                         resized = cv2.resize(image_bgr, self.img_size, interpolation=cv2.INTER_CUBIC)
@@ -80,6 +82,7 @@ class SAMOracle():
                 point_coords = None,
                 point_labels = None,
                 boxes=transformed_boxes,
+                mask_input=mask,
                 multimask_output=multimask_output   
             )
             box_scores = scores.cpu().numpy()
@@ -147,6 +150,8 @@ class Strategy:
         """
         self.dataset = dataset
         self.net = net
+        # self.sparse_net=
+        # self.dense_net
         self.sam = sam
         self.human_envolved = 0
         self.sam_failed = []
@@ -209,7 +214,7 @@ class Strategy:
                         if len(boxes)>200:
                             boxes = boxes[:200]
             
-                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
+                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(), boxes=boxes)
                         
                         main_dir = os.path.dirname(self.dataset.df["oracle"][idx])
                         if not os.path.exists(main_dir):
@@ -230,7 +235,7 @@ class Strategy:
                         if len(boxes)>200:
                             boxes = boxes[:200]
             
-                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
+                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(),boxes=boxes)
             
                         sam_predicted_mask = sam_predicted_mask.squeeze()
                         sam_generated_masks.append(sam_predicted_mask)
@@ -274,7 +279,10 @@ class Strategy:
                         if len(boxes)>200:
                             boxes = boxes[:200]
         
-                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes).squeeze())                
+                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx],
+                                                                     mask=model_predicted_mask.view(1, model_predicted_mask.shape[0],
+                                                                                                    model_predicted_mask.shape[1]).cuda(),
+                                                                     boxes=boxes).squeeze())                
                     masks_arr = np.array(sam_predicted_masks)
                     threshold = len(sam_predicted_masks) //2
                     if self.params["similarity_check"] and masks_arr.sum() != 0:
@@ -375,7 +383,10 @@ class Strategy:
                         if len(boxes)>200:
                             boxes = boxes[:200]
         
-                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes))
+                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx],
+                                                                     mask=model_predicted_mask.view(1, model_predicted_mask.shape[0],
+                                                                                                    model_predicted_mask.shape[1]).cuda(),
+                                                                     boxes=boxes))
                     
                     for i in range(10):
                         sam_predicted_masks[i] = 0.06 * sam_predicted_masks[i]
@@ -416,6 +427,7 @@ class Strategy:
         """
         labeled_idxs, labeled_data = self.dataset.get_labeled_data()
         self.net.train(labeled_data)
+        
 
     def predict(self, data):
         """
@@ -429,6 +441,7 @@ class Strategy:
             ndarray: The ground truth labels.
         """
         preds, masks_gt = self.net.predict(data)
+        ## Add predictions from SAM
         return preds, masks_gt
 
     def predict_prob(self, data):
