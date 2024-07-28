@@ -5,9 +5,7 @@ scripts/notebooks/logs/
 scripts/notebooks/other_foundation_models/
 scripts/notebooks/trained_models/
 scripts/notebooks/wandb/
-scripts/notebooks/04-Data-preparation.ipynb
-scripts/notebooks/06-Majority_Voting_training.ipynb
-scripts/notebooks/08-Comparison.ipynb
+scripts/notebooks/prompt_model.pt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
