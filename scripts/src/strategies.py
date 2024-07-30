@@ -326,7 +326,11 @@ class Strategy:
                 'Unet', encoder_name='resnet34', in_channels=3, classes = 1
                 )
         else:
-            model = UNet(n_channels=3, n_classes=1, bilinear=True)
+            if params["dropout"]:
+                dropout=0.2
+            else:
+                dropout=None
+            model = UNet(n_channels=3, n_classes=1, bilinear=True, dropout=dropout)
         net = Net(model, params, device = torch.device("cuda"))
         for i in range(1, models_num+1):
             dir = f'{params["model_path"]}_{round}'
