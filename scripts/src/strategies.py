@@ -213,8 +213,10 @@ class Strategy:
         
                         if len(boxes)>200:
                             boxes = boxes[:200]
+
+                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
             
-                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(), boxes=boxes)
+                        # sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(), boxes=boxes)
                         
                         main_dir = os.path.dirname(self.dataset.df["oracle"][idx])
                         if not os.path.exists(main_dir):
@@ -234,8 +236,10 @@ class Strategy:
         
                         if len(boxes)>200:
                             boxes = boxes[:200]
+
+                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
             
-                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(),boxes=boxes)
+                        # sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(),boxes=boxes)
             
                         sam_predicted_mask = sam_predicted_mask.squeeze()
                         sam_generated_masks.append(sam_predicted_mask)
@@ -279,10 +283,10 @@ class Strategy:
                         if len(boxes)>200:
                             boxes = boxes[:200]
         
-                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx],
-                                                                     mask=model_predicted_mask.view(1, model_predicted_mask.shape[0],
-                                                                                                    model_predicted_mask.shape[1]).cuda(),
-                                                                     boxes=boxes).squeeze())                
+                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes).squeeze())                
+                        # sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx],
+                        #                                              mask=mask.view(1, mask.shape[0], mask.shape[1]).cuda(),
+                        #                                              boxes=boxes).squeeze())                
                     masks_arr = np.array(sam_predicted_masks)
                     threshold = len(sam_predicted_masks) //2
                     if self.params["similarity_check"] and masks_arr.sum() != 0:
