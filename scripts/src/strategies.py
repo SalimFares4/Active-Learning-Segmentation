@@ -217,6 +217,8 @@ class Strategy:
         
                         if len(boxes)>200:
                             boxes = boxes[:200]
+
+                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
             
                         sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
                         # sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(), boxes=boxes)
