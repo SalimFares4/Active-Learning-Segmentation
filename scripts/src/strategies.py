@@ -22,7 +22,7 @@ import supervision as sv
 import segmentation_models_pytorch as smp
 from models import Net
 from unet_model import *
-
+from scipy.spatial.distance import cdist
 
 
 class SAMOracle():
@@ -139,7 +139,8 @@ class SAMOracle():
 
 
 class Strategy:
-    def __init__(self, dataset, net, sam:SAMOracle, params, db_scan=None):
+    def __init__(self, dataset, net, sam:SAMOracle, params, db_scan=None,
+                 sim_net=None, train_pos_embeddings=None, train_neg_embeddings=None):
     # def __init__(self, dataset, net):        
         """
         Initializes the Strategy class.
@@ -157,6 +158,9 @@ class Strategy:
         self.sam_failed = []
         self.params=params
         self.db_scan=db_scan
+        self.sim_net=sim_net
+        self.train_pos_embeddings=train_pos_embeddings
+        self.train_neg_embeddings=train_neg_embeddings
 
     def query(self, n):
         """
@@ -214,7 +218,8 @@ class Strategy:
                         if len(boxes)>200:
                             boxes = boxes[:200]
             
-                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(), boxes=boxes)
+                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
+                        # sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(), boxes=boxes)
                         
                         main_dir = os.path.dirname(self.dataset.df["oracle"][idx])
                         if not os.path.exists(main_dir):
@@ -234,8 +239,10 @@ class Strategy:
         
                         if len(boxes)>200:
                             boxes = boxes[:200]
+
+                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes)
             
-                        sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(),boxes=boxes)
+                        # sam_predicted_mask = self.sam.get_mask(img_path=self.dataset.df["images"][idx], mask=model_predicted_mask.view(1, model_predicted_mask.shape[0], model_predicted_mask.shape[1]).cuda(),boxes=boxes)                        
             
                         sam_predicted_mask = sam_predicted_mask.squeeze()
                         sam_generated_masks.append(sam_predicted_mask)
@@ -250,6 +257,9 @@ class Strategy:
         # if neg_idx return the path in 'oracle' to "empty"
         if neg_idxs:
             self.dataset.labeled_idxs[neg_idxs] = False
+
+    def distance(self, x,y,mode="euclidean"):
+        return cdist(x.cpu(),y.cpu(), mode).sum()/y.shape[0]
             
     def update_voting(self, pos_idxs, start_sam=False, use_predictor=False, use_generator=False, neg_idxs=None, round=0):
         """
@@ -279,25 +289,46 @@ class Strategy:
                         if len(boxes)>200:
                             boxes = boxes[:200]
         
-                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx],
-                                                                     mask=model_predicted_mask.view(1, model_predicted_mask.shape[0],
-                                                                                                    model_predicted_mask.shape[1]).cuda(),
-                                                                     boxes=boxes).squeeze())                
+                        sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx], boxes=boxes).squeeze())                
+                        # sam_predicted_masks.append(self.sam.get_mask(img_path=self.dataset.df["images"][idx],
+                        #                                              mask=mask.view(1, mask.shape[0], mask.shape[1]).cuda(),
+                        #                                              boxes=boxes).squeeze())                
                     masks_arr = np.array(sam_predicted_masks)
                     threshold = len(sam_predicted_masks) //2
                     if self.params["similarity_check"] and masks_arr.sum() != 0:
                         most_similar = self.db_scan.fit(masks_arr)
-                        if len(most_similar)<0:
+                        if len(most_similar)<4:
                             self.dataset.labeled_idxs[idx] = False
                             print(f"Sample {idx} was rejected due to randomness in generated masks")
                             continue
                         else:
                             np_sam = masks_arr[most_similar].sum(axis=0)
                             treshold = len(most_similar)//2
+
+                    elif self.params["similarity_learning"] and masks_arr.sum() != 0:
+                        most_similar=[]
+                        for mask in sam_predicted_masks:
+                            # print("mask before comparison:" , mask.shape)
+                            mask_tensor = torch.Tensor(mask).view(1,1,128,128)
+                            mask_emb = self.sim_net.sim_model(mask_tensor.cuda()).detach()
+                            pos_distance = self.distance(mask_emb, self.train_pos_embeddings)
+                            neg_distance = self.distance(mask_emb, self.train_neg_embeddings)
+                            if pos_distance<=neg_distance:
+                                # print("mask after comparison:" , mask.shape)
+                                most_similar.append(mask)
+                        if len(most_similar)<4:
+                            self.dataset.labeled_idxs[idx] = False
+                            print(f"Sample {idx} was rejected due to randomness in generated masks")
+                            continue
+                        else:
+                            np_sam = np.array(most_similar).sum(axis=0)
+                            # print("np_sam:" , np_sam.shape)
+                            treshold = len(most_similar)//2
                     else:
                         np_sam = masks_arr.sum(axis=0)
                     
                     majority = np.array((np_sam.squeeze() > threshold), dtype=np.float32)
+                    # print("majority:" , majority.shape)
                     # path = self.dataset.df["oracle"][idx].split("/")
                     # path[-2] = f'oracle_mv_{self.params["img_size"][0]}_{round}'
                     # parent_dir = "/".join(path[:-1])
@@ -558,7 +589,7 @@ class EntropySampling(Strategy):
         return top_n_idx
     
 class MarginSampling(Strategy):
-    def __init__(self, dataset, net, sam:SAMOracle, params=None, db_scan=None):
+    def __init__(self, dataset, net, sam:SAMOracle, params=None, db_scan=None, sim_net=None, train_pos_embeddings=None, train_neg_embeddings=None):
     # def __init__(self, dataset, net):
         """
         Initializes the MarginSampling strategy.
@@ -567,7 +598,7 @@ class MarginSampling(Strategy):
             dataset: The dataset object.
             net: The network model.
         """
-        super(MarginSampling, self).__init__(dataset, net, sam, params, db_scan)
+        super(MarginSampling, self).__init__(dataset, net, sam, params, db_scan, sim_net, train_pos_embeddings, train_neg_embeddings)
 
     def query(self, n):
         """
