@@ -73,7 +73,7 @@ class PromptNet:
                                 # {'params':self.sam.mask_predictor.model.mask_decoder.parameters(), 'lr': 1e-5}], momentum=0.9)
         # optimizer = optim.SGD(list(self.sam.mask_predictor.model.mask_decoder.parameters()),lr = 1e-5, momentum=0.9)
         
-        optimizer = optim.SGD(list(self.clf.parameters()),lr = 1e-5, momentum=0.9)
+        optimizer = optim.SGD(list(self.clf.parameters()),lr = 1e-4, momentum=0.9)
         loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits = True)
         prog_bar = tqdm.tqdm(range(1, self.params["n_epoch"] + 1), ncols = 100, disable = False)
     
